@@ -1,0 +1,25 @@
+{
+  "name": "CRAV E-Book Creator",
+  "id": "crav-ebook-creator",
+  "version": "1.0.0",
+  "publisher": "CRAudioVizAI",
+  "capabilities": {
+    "usesSharedCredits": true,
+    "supportsSSO": true,
+    "exports": ["epub", "pdf", "docx"]
+  },
+  "entrypoints": {
+    "app": "/studio",
+    "signin": "/auth/signin",
+    "billing": "/billing"
+  },
+  "api": {
+    "balance": "/api/credits/balance",
+    "ledger": "/api/credits/ledger",
+    "spend": "/api/credits/spend"
+  },
+  "sso": {
+    "start": "/api/integrations/dashboard/sso/start"
+  },
+  "health": "/api/integrations/dashboard/health"
+}
