@@ -1,0 +1,13 @@
+{
+  "id": "crav-ebook",
+  "name": "CRAV E-Book Creator",
+  "basePath": "/solutions/ebooks",
+  "requiresSSO": true,
+  "meters": {
+    "OUTLINE": 5,
+    "CHAPTER": 15,
+    "SNIPPET": 1,
+    "IMAGE": 5,
+    "EXPORT": 10
+  }
+}
