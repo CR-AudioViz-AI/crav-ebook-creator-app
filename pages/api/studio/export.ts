@@ -3,10 +3,24 @@ import { requireUser } from '@/lib/session-api';
 import { toPDF, toEPUB, toDOCX } from '@/lib/exporters';
 import { METERS, spend } from '@/lib/credits';
 import { supabase } from '@/lib/supabase';
+import { ExportSchema } from '@/lib/ebooks/schemas';
+import { useIdempotency, rateLimit, getClientIp } from '@/lib/ebooks/safety';
+import { saveFileHTML } from '@/lib/ebooks/storage';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    await rateLimit(getClientIp(req));
+  } catch (error: any) {
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
+
+  const idk = useIdempotency(req.headers['idempotency-key'] as string);
+  if (idk.hit) {
+    return res.json(idk.data);
   }
 
   const u = await requireUser(req);
@@ -14,11 +28,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { manuscriptId, format } = req.body || {};
-
-  if (!manuscriptId || !format) {
-    return res.status(400).json({ error: 'manuscriptId and format are required' });
+  const parse = ExportSchema.safeParse(req.body);
+  if (!parse.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_INPUT',
+      issues: parse.error.format(),
+    });
   }
+
+  const { manuscriptId, format } = parse.data;
 
   const { data: manuscript } = await supabase
     .from('manuscripts')
@@ -46,6 +65,52 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let contentType = '';
     let bytes: Buffer | Uint8Array;
 
+    await spend(u.orgId, u.userId, METERS.EXPORT_PDF, 'EXPORT', {
+      format,
+      manuscriptId,
+      adminEmailBypass: u.isAdmin,
+    });
+
+    if (format === 'html') {
+      const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${manuscript.title}</title>
+  <style>
+    body { font-family: Georgia, serif; max-width: 800px; margin: 40px auto; padding: 20px; line-height: 1.6; }
+    h1 { font-size: 2.5em; margin-bottom: 0.5em; }
+    h2 { font-size: 2em; margin-top: 1.5em; margin-bottom: 0.5em; }
+    h3 { font-size: 1.5em; margin-top: 1em; margin-bottom: 0.5em; }
+    p { margin-bottom: 1em; }
+  </style>
+</head>
+<body>
+  <h1>${manuscript.title}</h1>
+  ${manuscript.subtitle ? `<p><em>${manuscript.subtitle}</em></p>` : ''}
+  ${chapters?.map((c: any) => `
+    <h2>${c.title}</h2>
+    <div>${c.content_html || ''}</div>
+  `).join('\n')}
+</body>
+</html>`;
+
+      const url = await saveFileHTML(html, 'exports');
+      await supabase.from('ebook_exports').insert({
+        manuscript_id: manuscriptId,
+        org_id: u.orgId,
+        user_id: u.userId,
+        format,
+        url,
+        status: 'READY',
+        meta: { chapters: chapters?.length || 0 },
+      });
+
+      const payload = { ok: true, url, format };
+      idk.set?.(payload);
+      return res.json(payload);
+    }
+
     if (format === 'pdf') {
       cost = METERS.EXPORT_PDF;
       contentType = 'application/pdf';
@@ -61,12 +126,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } else {
       return res.status(400).json({ error: 'Invalid format' });
     }
-
-    await spend(u.orgId, u.userId, cost, 'EXPORT', {
-      format,
-      manuscriptId,
-      adminEmailBypass: u.isAdmin,
-    });
 
     await supabase.from('ebook_exports').insert({
       manuscript_id: manuscriptId,
@@ -87,6 +146,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (error.message === 'INSUFFICIENT_CREDITS') {
       return res.status(402).json({ error: 'Insufficient credits' });
     }
+    if (error.message === 'RATE_LIMIT_EXCEEDED') {
+      return res.status(429).json({ error: 'Rate limit exceeded' });
+    }
+    console.error('Export error:', error);
     res.status(500).json({ error: error.message });
   }
 }
