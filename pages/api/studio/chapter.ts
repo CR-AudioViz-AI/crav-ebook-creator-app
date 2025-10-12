@@ -1,12 +1,28 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireUser } from '@/lib/session-api';
-import { llm } from '@/lib/llm';
 import { METERS, spend } from '@/lib/credits';
 import { supabase } from '@/lib/supabase';
+import { ChapterSchema } from '@/lib/ebooks/schemas';
+import { useIdempotency, rateLimit, getClientIp } from '@/lib/ebooks/safety';
+import { textChapter } from '@/lib/ebooks/ai-providers';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    await rateLimit(getClientIp(req));
+  } catch (error: any) {
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
+
+  const idk = useIdempotency(req.headers['idempotency-key'] as string);
+  if (idk.hit) {
+    return res.json(idk.data);
   }
 
   const u = await requireUser(req);
@@ -14,58 +30,57 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { chapterId, title, bullets, wordsPerChapter, citations, tone } = req.body || {};
+  const parse = ChapterSchema.safeParse(req.body);
+  if (!parse.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_INPUT',
+      issues: parse.error.format(),
+    });
+  }
 
-  let chapterTitle = title;
-  if (chapterId) {
+  const { chapterId, words, brief, tone } = parse.data;
+
+  try {
     const { data: chapter } = await supabase
       .from('chapters')
-      .select('title')
+      .select('title, manuscript_id')
       .eq('id', chapterId)
       .maybeSingle();
 
-    if (chapter) {
-      chapterTitle = chapter.title;
+    if (!chapter) {
+      return res.status(404).json({ error: 'Chapter not found' });
     }
-  }
 
-  try {
     await spend(u.orgId, u.userId, METERS.CHAPTER, 'CHAPTER', {
-      title: chapterTitle,
       chapterId,
+      title: chapter.title,
       adminEmailBypass: u.isAdmin,
     });
 
-    const prompt = `Write a full chapter in HTML format for a professional e-book.
+    const contentHtml = await textChapter({
+      title: chapter.title,
+      words,
+      brief,
+      tone,
+    });
 
-Chapter Title: ${chapterTitle}
-Tone: ${tone || 'professional'}
-Target Word Count: ${wordsPerChapter || 1800}
-Citations Required: ${citations ? 'Yes, include references' : 'No'}
+    await supabase
+      .from('chapters')
+      .update({ content_html: contentHtml, updated_at: new Date().toISOString() })
+      .eq('id', chapterId);
 
-${bullets && bullets.length > 0 ? `Key Points to Cover:\n${(bullets || []).map((b: string) => `- ${b}`).join('\n')}` : ''}
-
-Write engaging, informative content that educates the reader while maintaining a ${tone || 'professional'} tone. Use proper HTML formatting with <h2>, <h3>, <p>, <ul>, <ol> tags as appropriate. Do NOT include <html>, <head>, or <body> tags - just the content.`;
-
-    const contentHtml = await llm(
-      'You are a meticulous non-fiction writer creating high-quality educational content.',
-      prompt,
-      0.7,
-      4000
-    );
-
-    if (chapterId) {
-      await supabase
-        .from('chapters')
-        .update({ content_html: contentHtml })
-        .eq('id', chapterId);
-    }
-
-    res.json({ contentMd: contentHtml, contentHtml });
+    const payload = { ok: true, chapterId, contentMd: contentHtml, contentHtml };
+    idk.set?.(payload);
+    res.json(payload);
   } catch (error: any) {
     if (error.message === 'INSUFFICIENT_CREDITS') {
       return res.status(402).json({ error: 'Insufficient credits' });
     }
+    if (error.message === 'RATE_LIMIT_EXCEEDED') {
+      return res.status(429).json({ error: 'Rate limit exceeded' });
+    }
+    console.error('Chapter generation error:', error);
     res.status(500).json({ error: error.message });
   }
 }
