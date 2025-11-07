@@ -43,7 +43,7 @@ export default function Credits() {
         const data = await ledgerRes.json();
         setLedger(data.ledger || []);
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error fetching credits:', error);
     }
   };
