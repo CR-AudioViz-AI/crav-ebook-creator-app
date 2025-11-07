@@ -1,4 +1,5 @@
 import { RateLimiterMemory } from 'rate-limiter-flexible';
+import { getErrorMessage, logError, formatApiError } from '@/lib/utils/error-utils';
 
 const rateLimiter = new RateLimiterMemory({
   points: 30,
@@ -22,7 +23,7 @@ setInterval(() => {
 export async function rateLimit(key: string): Promise<void> {
   try {
     await rateLimiter.consume(key);
-  } catch (error) {
+  } catch (error: unknown) {
     throw new Error('RATE_LIMIT_EXCEEDED');
   }
 }
