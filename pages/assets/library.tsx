@@ -38,7 +38,7 @@ export default function AssetLibrary() {
         .order('created_at', { ascending: false });
 
       setAssets(data || []);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to load assets:', error);
     } finally {
       setLoading(false);
@@ -51,7 +51,7 @@ export default function AssetLibrary() {
     try {
       await supabase.from('media_assets').delete().eq('id', id);
       setAssets((prev) => prev.filter((a) => a.id !== id));
-    } catch (error) {
+    } catch (error: unknown) {
       alert('Failed to delete asset');
     }
   };
