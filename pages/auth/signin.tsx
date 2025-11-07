@@ -18,7 +18,7 @@ export default function SignIn() {
       if (result?.error) {
         alert('Login failed. Use code: 000000');
       }
-    } catch (error) {
+    } catch (error: unknown) {
       alert('Login failed');
     } finally {
       setLoading(false);
