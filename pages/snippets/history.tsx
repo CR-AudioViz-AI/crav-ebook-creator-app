@@ -39,7 +39,7 @@ export default function SnippetHistory() {
         .limit(50);
 
       setSnippets(data || []);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to load snippets:', error);
     } finally {
       setLoading(false);
@@ -51,7 +51,7 @@ export default function SnippetHistory() {
       await navigator.clipboard.writeText(text);
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
-    } catch (error) {
+    } catch (error: unknown) {
       alert('Failed to copy to clipboard');
     }
   };
