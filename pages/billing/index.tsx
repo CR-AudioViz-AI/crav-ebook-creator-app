@@ -41,7 +41,7 @@ export default function Billing() {
       } else {
         alert('Failed to create checkout session');
       }
-    } catch (error) {
+    } catch (error: unknown) {
       alert('Checkout failed');
     } finally {
       setLoading(false);
