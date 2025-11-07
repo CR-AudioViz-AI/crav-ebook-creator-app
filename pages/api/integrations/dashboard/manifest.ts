@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import path from 'path';
 import fs from 'fs';
+import { getErrorMessage, logError, formatApiError } from '@/lib/utils/error-utils';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -10,7 +11,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     res.setHeader('Content-Type', 'application/json');
     res.json(manifest);
-  } catch (error) {
+  } catch (error: unknown) {
     res.status(500).json({
       fallback: true,
       path: '/.well-known/crav-plugin.json',
