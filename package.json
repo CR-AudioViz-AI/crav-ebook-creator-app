@@ -96,7 +96,8 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "5.2.2",
     "vaul": "^0.9.9",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "@supabase/ssr": "^0.0.10"
   },
   "devDependencies": {
     "@types/paypal-rest-sdk": "^1.7.9",
